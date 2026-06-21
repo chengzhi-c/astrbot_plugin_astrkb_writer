@@ -1,0 +1,47 @@
+{
+  "default_kb_name": {
+    "description": "默认写入的 AstrBot 原生知识库名称；不存在时可自动创建",
+    "type": "string",
+    "default": "Bot自由知识库"
+  },
+  "default_embedding_provider_id": {
+    "description": "自动创建知识库时使用的 Embedding Provider ID；留空则尝试自动选择第一个可用 embedding provider",
+    "type": "string",
+    "default": ""
+  },
+  "enable_write": {
+    "description": "是否允许 Bot 写入/更新文档",
+    "type": "bool",
+    "default": true
+  },
+  "enable_delete": {
+    "description": "是否允许 Bot 删除知识库文档",
+    "type": "bool",
+    "default": false
+  },
+  "allow_create_kb": {
+    "description": "目标知识库不存在时是否允许自动创建",
+    "type": "bool",
+    "default": true
+  },
+  "admin_only": {
+    "description": "是否仅允许管理员使用写入工具",
+    "type": "bool",
+    "default": true
+  },
+  "max_content_chars": {
+    "description": "单篇文档最大字符数",
+    "type": "int",
+    "default": 20000
+  },
+  "chunk_size": {
+    "description": "上传到原生知识库时的分块大小",
+    "type": "int",
+    "default": 512
+  },
+  "chunk_overlap": {
+    "description": "上传到原生知识库时的分块重叠大小",
+    "type": "int",
+    "default": 50
+  }
+}
