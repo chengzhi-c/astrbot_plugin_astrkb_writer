@@ -1,6 +1,6 @@
 # astrbot_plugin_astrkb_writer
 
-轻量 AstrBot 原生知识库写入插件。它不依赖 NoteSift 或其他插件，只调用 AstrBot 自带 `KnowledgeBaseManager` / `KBHelper` API。
+轻量 AstrBot 原生知识库写入插件。它不依赖其他插件，只调用 AstrBot 自带 `KnowledgeBaseManager` / `KBHelper` API。
 
 ## 能力
 
