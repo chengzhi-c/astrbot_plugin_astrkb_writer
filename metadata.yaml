@@ -2,5 +2,5 @@ name: astrbot_plugin_astrkb_writer
 desc: 让 Bot 自由写入、更新、删除 AstrBot 原生知识库文档的轻量插件
 version: v0.3.0
 author: chengzhi-c
-repo: ""
+repo: https://github.com/chengzhi-c/astrbot_plugin_astrkb_writer
 astrbot_version: ">=4.6.0"
