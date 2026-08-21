@@ -113,13 +113,19 @@ def test_list_documents_clamps_limit_floor_to_1() -> None:
     assert helper.received_limit == 1
 
 
-def test_list_documents_missing_kb_returns_empty() -> None:
+def test_list_documents_missing_kb_raises() -> None:
     bridge = AstrBotKBBridge(
         context=SimpleNamespace(kb_manager=FakeManager(None)),
         config=NativeKBConfig(default_kb_name="kb"),
         plugin_name="test",
     )
-    assert asyncio.run(bridge.list_documents()) == []
+    with pytest.raises(ValueError, match="知识库不存在"):
+        asyncio.run(bridge.list_documents())
+
+
+def test_list_documents_empty_existing_kb_returns_empty() -> None:
+    helper = FakeHelper([])
+    assert asyncio.run(_bridge(helper).list_documents()) == []
 
 
 class FakeProvider:
@@ -199,3 +205,32 @@ def test_get_or_create_kb_reuses_existing() -> None:
     helper = asyncio.run(_bridge_with(manager).get_or_create_kb("kb"))
     assert helper.kb.kb_id == "old-kb"
     assert manager.created == []
+
+
+def test_get_or_create_kb_disallowed_raises() -> None:
+    manager = FakeManagerWithCreate(existing_helper=None, providers=[FakeProvider("prov-1")])
+    bridge = _bridge_with(manager)
+    bridge.config.allow_create_kb = False
+    with pytest.raises(ValueError, match="未允许自动创建"):
+        asyncio.run(bridge.get_or_create_kb("missing"))
+    assert manager.created == []
+
+
+def test_resolve_embedding_missing_provider_manager_raises() -> None:
+    manager = FakeManagerWithCreate(providers=[FakeProvider("prov-1")])
+    manager.provider_manager = None
+    with pytest.raises(ValueError, match="provider_manager 不可用"):
+        asyncio.run(_bridge_with(manager)._resolve_embedding_provider_id(manager))
+
+
+def test_get_kb_manager_prefers_context_then_lifecycle() -> None:
+    primary = object()
+    fallback = object()
+    bridge = AstrBotKBBridge(
+        context=SimpleNamespace(kb_manager=primary, core_lifecycle=SimpleNamespace(kb_manager=fallback)),
+        config=NativeKBConfig(default_kb_name="kb"),
+        plugin_name="test",
+    )
+    assert bridge.get_kb_manager() is primary
+    bridge.context.kb_manager = None
+    assert bridge.get_kb_manager() is fallback

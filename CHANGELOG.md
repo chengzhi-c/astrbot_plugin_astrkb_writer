@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.4.0
+
+### 修复
+
+- 缺库时 `list_documents` 改为抛出「知识库不存在」，不再返回空列表装成没有文档。
+- 写锁按知识库名 `setdefault`，并对 `kb_name` 去空白，避免同库第一把锁重复创建、带空格的库名写成另一套锁。
+- `update_document` 改为调用内部创建路径，不再经过带同名政策的 `write_document`。
+
+### 变更
+
+- 新增配置 `duplicate_policy`（`create` / `skip` / `update`），默认 `create`。
+- 新增指令 `/astrkb dups`、`/astrkb dups-clean`（后者需要 `enable_delete`）。
+- 写入已存在的知识库时使用该库的 `chunk_size` / `chunk_overlap`。
+- 标题超过 120 字时回复中提示已截断。
+
+### 测试
+
+- 覆盖同名政策、分页命中、命令层、缺库 list、写锁去空白。
+
 ## 0.3.0
 
 ### 修复

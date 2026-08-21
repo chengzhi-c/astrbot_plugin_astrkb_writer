@@ -228,3 +228,134 @@ def test_per_kb_lock_defaults_to_configured_kb() -> None:
     """未指定 kb_name 时落到默认知识库的锁。"""
     plugin = _plugin(admin_only=False)
     assert plugin._lock_for("") is plugin._lock_for(plugin.settings.default_kb_name)
+
+
+def test_per_kb_lock_strips_kb_name() -> None:
+    plugin = _plugin(admin_only=False)
+    assert plugin._lock_for("  wiki  ") is plugin._lock_for("wiki")
+
+
+def test_per_kb_lock_concurrent_first_creation_shares_lock() -> None:
+    plugin = _plugin(admin_only=False)
+
+    async def _run() -> None:
+        locks = await asyncio.gather(
+            asyncio.to_thread(plugin._lock_for, "new-kb"),
+            asyncio.to_thread(plugin._lock_for, "new-kb"),
+        )
+        # to_thread 只为并发进入；锁对象本身仍须是同一把
+        assert locks[0] is locks[1]
+        assert len(plugin._write_locks) == 1
+
+    asyncio.run(_run())
+
+
+class RecEvent:
+    def __init__(self, admin: bool = True):
+        self.admin = admin
+        self.texts: list[str] = []
+
+    def is_admin(self) -> bool:
+        return self.admin
+
+    def plain_result(self, text: str):
+        self.texts.append(text)
+        return text
+
+
+async def _collect(gen) -> list[str]:
+    out = []
+    async for item in gen:
+        out.append(item)
+    return out
+
+
+def test_status_denied_for_non_admin() -> None:
+    plugin = _plugin(admin_only=True)
+    event = RecEvent(admin=False)
+    assert asyncio.run(_collect(plugin.astrkb_status(event))) == ["没有权限使用 AstrBot 原生知识库写入工具。"]
+
+
+def test_status_reports_policy_and_unavailable_manager() -> None:
+    plugin = _plugin(admin_only=False)
+    event = RecEvent()
+    texts = asyncio.run(_collect(plugin.astrkb_status(event)))
+    assert "同名写入：create" in texts[0]
+    assert "不可用" in texts[0]
+
+
+def test_docs_missing_kb_uses_failure_message() -> None:
+    class MissingKB:
+        async def get_kb_by_name(self, kb_name: str):
+            return None
+
+    plugin = _plugin(admin_only=False)
+    plugin.context.kb_manager = MissingKB()
+    plugin.bridge.context = plugin.context
+    event = RecEvent()
+    texts = asyncio.run(_collect(plugin.astrkb_docs(event, kb_name="ghost")))
+    assert "列出文档失败" in texts[0]
+    assert "知识库不存在" in texts[0]
+
+
+def test_write_skip_message() -> None:
+    class SkipBridge:
+        async def write_document(self, **kwargs):
+            return {
+                "action": "skipped",
+                "kb_name": "kb",
+                "doc": {"doc_name": "t.txt", "doc_id": "d1", "chunk_count": 1},
+            }
+
+    plugin = _plugin(admin_only=False)
+    plugin.bridge = SkipBridge()
+    msg = asyncio.run(plugin.astrkb_write_document(None, "t", "c"))
+    assert msg.startswith("已跳过（同名文档已存在）")
+    assert "d1" in msg
+
+
+def test_string_false_does_not_enable_write() -> None:
+    plugin = AstrKBWriterPlugin(FakeContext(), config={"enable_write": "false", "admin_only": False})
+    assert plugin.enable_write is False
+    assert asyncio.run(plugin.astrkb_write_document(None, "t", "c")) == "AstrBot 原生知识库写入功能已关闭。"
+
+
+def test_dups_clean_requires_enable_delete() -> None:
+    plugin = _plugin(admin_only=False)
+    assert "enable_delete" in asyncio.run(plugin._dups_clean(None))
+
+
+def test_dups_preview_none() -> None:
+    class EmptyDups:
+        async def list_duplicate_groups(self, kb_name=""):
+            return []
+
+    plugin = _plugin(admin_only=False)
+    plugin.bridge = EmptyDups()
+    assert asyncio.run(plugin._dups_preview(None)) == "没有同名重复。"
+
+
+def test_dups_clean_deletes_older_twins() -> None:
+    class Twin:
+        def __init__(self, doc_id):
+            self.doc_id = doc_id
+            self.doc_name = "A.txt"
+            self.created_at = doc_id
+
+    class DupsBridge:
+        def __init__(self):
+            self.deleted = []
+
+        async def list_duplicate_groups(self, kb_name=""):
+            return [("A.txt", [Twin("keep"), Twin("drop")])]
+
+        async def delete_document(self, doc_id, kb_name=""):
+            self.deleted.append(doc_id)
+            return {"action": "deleted", "doc": {"doc_id": doc_id, "doc_name": "A.txt"}}
+
+    plugin = _plugin(admin_only=False)
+    plugin.enable_delete = True
+    plugin.bridge = DupsBridge()
+    msg = asyncio.run(plugin._dups_clean(None))
+    assert "已清理同名重复 1 篇" in msg
+    assert plugin.bridge.deleted == ["drop"]

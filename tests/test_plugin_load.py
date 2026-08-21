@@ -133,3 +133,12 @@ def test_plugin_methods_convert_bridge_errors_to_messages() -> None:
     assert asyncio.run(plugin.astrkb_update_document(None, "d", "c")).startswith("更新 AstrBot 原生知识库失败：")
     plugin.enable_delete = True
     assert asyncio.run(plugin.astrkb_delete_document(None, "d")).startswith("删除 AstrBot 原生知识库文档失败：")
+
+
+def test_help_lists_list_tools_and_policy() -> None:
+    plugin = _plugin()
+    text = plugin._help_text()
+    assert "astrkb_list_kbs" in text
+    assert "astrkb_list_documents" in text
+    assert "dups-clean" in text
+    assert "create" in text

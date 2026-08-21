@@ -30,18 +30,24 @@
     "default": true
   },
   "max_content_chars": {
-    "description": "单篇文档最大字符数",
+    "description": "单篇文档最大字符数（100–200000，超出按边界收回）",
     "type": "int",
     "default": 20000
   },
   "chunk_size": {
-    "description": "上传到原生知识库时的分块大小",
+    "description": "上传到原生知识库时的分块大小（100–8000，超出按边界收回）",
     "type": "int",
     "default": 512
   },
   "chunk_overlap": {
-    "description": "上传到原生知识库时的分块重叠大小",
+    "description": "上传到原生知识库时的分块重叠大小（0–2000，且必须小于 chunk_size）",
     "type": "int",
     "default": 50
+  },
+  "duplicate_policy": {
+    "description": "写入时遇到同名文档（标题生成的文件名相同）如何处理：create=总是新建（默认，兼容旧行为）；skip=跳过并返回已有文档；update=按更新语义覆盖最新一篇同名文档。清理历史双胞胎请用 /astrkb dups-clean。",
+    "type": "string",
+    "default": "create",
+    "options": ["create", "skip", "update"]
   }
 }

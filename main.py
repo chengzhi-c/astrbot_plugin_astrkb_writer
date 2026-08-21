@@ -11,7 +11,13 @@ from astrbot.core import logger
 from astrbot.core.agent.run_context import ContextWrapper
 from astrbot.core.astr_agent_context import AstrAgentContext
 
-from .core.astrkb_bridge import AstrBotKBBridge, DEFAULT_KB_NAME, NativeKBConfig
+from .core.astrkb_bridge import (
+    AstrBotKBBridge,
+    DEFAULT_KB_NAME,
+    LIST_LIMIT_DEFAULT,
+    NativeKBConfig,
+    _as_bool,
+)
 
 PLUGIN_NAME = "astrbot_plugin_astrkb_writer"
 _PERMISSION_DENIED = "没有权限使用 AstrBot 原生知识库写入工具。"
@@ -27,7 +33,7 @@ def _schema(properties: dict[str, Any] | None = None, required: list[str] | None
 
 
 def _str_arg(kwargs: dict[str, Any], key: str) -> str:
-    """取字符串参数，缺省/None 统一归 ""。"""
+    """取字符串参数，缺省/None 统一归 ""。路径类字段的 strip 在 _tool_kwargs 里做。"""
     return str(kwargs.get(key, "") or "")
 
 
@@ -59,37 +65,43 @@ class AstrKBTool(FunctionTool):
     operation: str = ""
 
     async def call(self, context: ContextWrapper[AstrAgentContext], **kwargs: Any) -> str:
+        if self.plugin is None:
+            return "内部错误：工具未绑定插件。"
         event = context.context.event
-        if self.operation == "list_kbs":
-            return await self.plugin.astrkb_list_kbs(event)
-        if self.operation == "list_documents":
-            return await self.plugin.astrkb_list_documents(
-                event,
-                kb_name=_str_arg(kwargs, "kb_name"),
-                limit=_int_arg(kwargs, "limit", 20),
-            )
-        if self.operation == "write_document":
-            return await self.plugin.astrkb_write_document(
-                event,
-                title=_str_arg(kwargs, "title"),
-                content=_str_arg(kwargs, "content"),
-                kb_name=_str_arg(kwargs, "kb_name"),
-            )
-        if self.operation == "update_document":
-            return await self.plugin.astrkb_update_document(
-                event,
-                doc_id=_str_arg(kwargs, "doc_id"),
-                content=_str_arg(kwargs, "content"),
-                title=_str_arg(kwargs, "title"),
-                kb_name=_str_arg(kwargs, "kb_name"),
-            )
-        if self.operation == "delete_document":
-            return await self.plugin.astrkb_delete_document(
-                event,
-                doc_id=_str_arg(kwargs, "doc_id"),
-                kb_name=_str_arg(kwargs, "kb_name"),
-            )
-        return "未知 AstrBot 原生知识库工具操作。"
+        args = _tool_kwargs(self.operation, kwargs)
+        fn = getattr(self.plugin, f"astrkb_{self.operation}", None)
+        if args is None or fn is None:
+            return "未知 AstrBot 原生知识库工具操作。"
+        return await fn(event, **args)
+
+
+def _tool_kwargs(operation: str, kwargs: dict[str, Any]) -> dict[str, Any] | None:
+    if operation == "list_kbs":
+        return {}
+    if operation == "list_documents":
+        return {
+            "kb_name": _str_arg(kwargs, "kb_name").strip(),
+            "limit": _int_arg(kwargs, "limit", LIST_LIMIT_DEFAULT),
+        }
+    if operation == "write_document":
+        return {
+            "title": _str_arg(kwargs, "title").strip(),
+            "content": _str_arg(kwargs, "content"),
+            "kb_name": _str_arg(kwargs, "kb_name").strip(),
+        }
+    if operation == "update_document":
+        return {
+            "doc_id": _str_arg(kwargs, "doc_id").strip(),
+            "content": _str_arg(kwargs, "content"),
+            "title": _str_arg(kwargs, "title").strip(),
+            "kb_name": _str_arg(kwargs, "kb_name").strip(),
+        }
+    if operation == "delete_document":
+        return {
+            "doc_id": _str_arg(kwargs, "doc_id").strip(),
+            "kb_name": _str_arg(kwargs, "kb_name").strip(),
+        }
+    return None
 
 
 LIST_DOCUMENTS_SCHEMA = _schema(
@@ -129,9 +141,9 @@ class AstrKBWriterPlugin(Star):
         super().__init__(context)
         self.config = config or {}
         self.settings = NativeKBConfig.from_dict(config, default_kb_name=DEFAULT_KB_NAME)
-        self.enable_write = bool(self.config.get("enable_write", True))
-        self.enable_delete = bool(self.config.get("enable_delete", False))
-        self.admin_only = bool(self.config.get("admin_only", True))
+        self.enable_write = _as_bool(self.config.get("enable_write", True), True)
+        self.enable_delete = _as_bool(self.config.get("enable_delete", False), False)
+        self.admin_only = _as_bool(self.config.get("admin_only", True), True)
         self.bridge = AstrBotKBBridge(context, self.settings, PLUGIN_NAME)
         self._write_locks: dict[str, asyncio.Lock] = {}
         self.tools = [
@@ -152,7 +164,7 @@ class AstrKBWriterPlugin(Star):
             AstrKBTool(
                 plugin=self,
                 name="astrkb_write_document",
-                description="向 AstrBot 原生知识库写入一篇新文档。必须提供 title 和 content。注意：内容会被检索回会话上下文，勿写入密钥/口令/个人敏感信息。",
+                description="向 AstrBot 原生知识库写入一篇新文档。必须提供 title 和 content。同名文档是否合并取决于插件 duplicate_policy（create/skip/update），默认 create。注意：内容会被检索回会话上下文，勿写入密钥/口令/个人敏感信息。",
                 parameters=WRITE_DOCUMENT_SCHEMA,
                 operation="write_document",
             ),
@@ -202,8 +214,8 @@ class AstrKBWriterPlugin(Star):
             for tool in self.tools:
                 try:
                     remove_func(tool.name)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.debug(f"[{PLUGIN_NAME}] remove tool {tool.name} skipped: {exc}")
         self.context.add_llm_tools(*self.tools)
         self._tools_registered = True
         logger.info(f"[{PLUGIN_NAME}] registered LLM tools with explicit parameter schemas")
@@ -253,6 +265,7 @@ class AstrKBWriterPlugin(Star):
             f"- 写入/更新：{'开启' if self.enable_write else '关闭'}\n"
             f"- 删除：{'开启' if self.enable_delete else '关闭'}\n"
             f"- 仅管理员：{'开启' if self.admin_only else '关闭'}\n"
+            f"- 同名写入：{self.settings.duplicate_policy}\n"
             f"- 单篇上限：{self.settings.max_content_chars} 字符\n"
             f"- 分块参数：chunk_size={self.settings.chunk_size}, chunk_overlap={self.settings.chunk_overlap}"
         )
@@ -266,7 +279,19 @@ class AstrKBWriterPlugin(Star):
     @astrkb.command("docs", alias={"documents", "文档"})
     async def astrkb_docs(self, event: AstrMessageEvent, kb_name: str = ""):
         """文档：列出默认或指定知识库的文档。"""
-        yield event.plain_result(await self.astrkb_list_documents(event, kb_name=kb_name, limit=20))
+        yield event.plain_result(
+            await self.astrkb_list_documents(event, kb_name=kb_name.strip(), limit=LIST_LIMIT_DEFAULT)
+        )
+
+    @astrkb.command("dups", alias={"duplicates", "重复"})
+    async def astrkb_dups(self, event: AstrMessageEvent, kb_name: str = ""):
+        """重复：列出指定知识库中的同名文档。"""
+        yield event.plain_result(await self._dups_preview(event, kb_name=kb_name.strip()))
+
+    @astrkb.command("dups-clean", alias={"dedup", "清重复"})
+    async def astrkb_dups_clean(self, event: AstrMessageEvent, kb_name: str = ""):
+        """清重复：每组同名文档只保留最新一篇，需开启 enable_delete。"""
+        yield event.plain_result(await self._dups_clean(event, kb_name=kb_name.strip()))
 
     def _help_text(self) -> str:
         return (
@@ -275,7 +300,12 @@ class AstrKBWriterPlugin(Star):
             "- /astrkb status：查看状态\n"
             "- /astrkb list：列出原生知识库\n"
             "- /astrkb docs [知识库名]：列出文档\n"
+            "- /astrkb dups [知识库名]：列出同名重复文档\n"
+            "- /astrkb dups-clean [知识库名]：清理同名重复（需开启 enable_delete）\n"
+            f"同名写入政策：{self.settings.duplicate_policy}（create=总是新建，skip=跳过，update=覆盖最新一篇）\n"
             "LLM 工具：\n"
+            "- astrkb_list_kbs：列出知识库\n"
+            "- astrkb_list_documents：列出文档\n"
             "- astrkb_write_document：写入新文档\n"
             "- astrkb_update_document：更新文档\n"
             "- astrkb_delete_document：删除文档（默认关闭）"
@@ -288,12 +318,8 @@ class AstrKBWriterPlugin(Star):
         锁数量有界（= 实际出现过的知识库数），无泄漏风险。
         update 持本锁调用 bridge（其内部写新删旧不再取锁），无重入死锁。
         """
-        key = kb_name or self.settings.default_kb_name
-        lock = self._write_locks.get(key)
-        if lock is None:
-            lock = asyncio.Lock()
-            self._write_locks[key] = lock
-        return lock
+        key = (kb_name or self.settings.default_kb_name).strip() or self.settings.default_kb_name
+        return self._write_locks.setdefault(key, asyncio.Lock())
 
     async def astrkb_list_kbs(self, event: AstrMessageEvent) -> str:
         """列出 AstrBot 原生知识库。"""
@@ -338,13 +364,7 @@ class AstrKBWriterPlugin(Star):
         try:
             async with self._lock_for(kb_name):
                 result = await self.bridge.write_document(title=title, content=content, kb_name=kb_name)
-            doc = result.get("doc", {})
-            return (
-                f"已写入 AstrBot 原生知识库：{result.get('kb_name', '')}\n"
-                f"文档：{doc.get('doc_name')}\n"
-                f"doc_id：{doc.get('doc_id')}\n"
-                f"分块数：{doc.get('chunk_count', 0)}"
-            )
+            return self._write_result_text(result)
         except Exception as exc:
             return _failure("写入 AstrBot 原生知识库", exc)
 
@@ -364,17 +384,7 @@ class AstrKBWriterPlugin(Star):
         try:
             async with self._lock_for(kb_name):
                 result = await self.bridge.update_document(doc_id=doc_id, content=content, title=title, kb_name=kb_name)
-            doc = result.get("doc", {})
-            text = (
-                f"已更新 AstrBot 原生知识库：{result.get('kb_name', '')}\n"
-                f"新文档：{doc.get('doc_name')}\n"
-                f"新 doc_id：{doc.get('doc_id')}\n"
-                f"旧 doc_id：{result.get('old_doc_id', '')}\n"
-                f"分块数：{doc.get('chunk_count', 0)}"
-            )
-            if not result.get("old_doc_deleted", True):
-                text += f"\n⚠ 旧文档 {result.get('old_doc_id', '')} 删除失败，库内暂存新旧两篇，请手动清理。"
-            return text
+            return self._write_result_text(result)
         except Exception as exc:
             return _failure("更新 AstrBot 原生知识库", exc)
 
@@ -391,6 +401,83 @@ class AstrKBWriterPlugin(Star):
             return f"已删除 AstrBot 原生知识库文档：{doc.get('doc_name')} ({doc.get('doc_id')})"
         except Exception as exc:
             return _failure("删除 AstrBot 原生知识库文档", exc)
+
+    def _write_result_text(self, result: dict[str, Any]) -> str:
+        doc = result.get("doc", {})
+        action = result.get("action")
+        if action == "skipped":
+            text = (
+                f"已跳过（同名文档已存在）：{result.get('kb_name', '')}\n"
+                f"文档：{doc.get('doc_name')}\n"
+                f"doc_id：{doc.get('doc_id')}\n"
+                f"分块数：{doc.get('chunk_count', 0)}"
+            )
+        elif action == "updated":
+            text = (
+                f"已更新 AstrBot 原生知识库：{result.get('kb_name', '')}\n"
+                f"新文档：{doc.get('doc_name')}\n"
+                f"新 doc_id：{doc.get('doc_id')}\n"
+                f"旧 doc_id：{result.get('old_doc_id', '')}\n"
+                f"分块数：{doc.get('chunk_count', 0)}"
+            )
+            if not result.get("old_doc_deleted", True):
+                text += f"\n⚠ 旧文档 {result.get('old_doc_id', '')} 删除失败，库内暂存新旧两篇，请手动清理。"
+        else:
+            text = (
+                f"已写入 AstrBot 原生知识库：{result.get('kb_name', '')}\n"
+                f"文档：{doc.get('doc_name')}\n"
+                f"doc_id：{doc.get('doc_id')}\n"
+                f"分块数：{doc.get('chunk_count', 0)}"
+            )
+        if result.get("title_truncated"):
+            text += "\n标题已截断至 120 字。"
+        return text
+
+    async def _dups_preview(self, event: AstrMessageEvent, kb_name: str = "") -> str:
+        if not await self._allowed(event):
+            return _PERMISSION_DENIED
+        try:
+            groups = await self.bridge.list_duplicate_groups(kb_name=kb_name)
+        except Exception as exc:
+            return _failure("列出重复文档", exc)
+        if not groups:
+            return "没有同名重复。"
+        lines = ["同名重复文档："]
+        for name, docs in groups:
+            lines.append(f"- {name}（{len(docs)} 篇）")
+            for doc in docs:
+                created = getattr(doc, "created_at", None)
+                iso = getattr(created, "isoformat", None)
+                created_text = iso() if callable(iso) else (created if created not in (None, "") else "-")
+                lines.append(f"  doc_id={getattr(doc, 'doc_id', '')} created_at={created_text}")
+        return "\n".join(lines)
+
+    async def _dups_clean(self, event: AstrMessageEvent, kb_name: str = "") -> str:
+        if not await self._allowed(event):
+            return _PERMISSION_DENIED
+        if not self.enable_delete:
+            return "AstrBot 原生知识库删除功能默认关闭。如确需删除，请在插件配置中开启 enable_delete。"
+        try:
+            async with self._lock_for(kb_name):
+                groups = await self.bridge.list_duplicate_groups(kb_name=kb_name)
+                if not groups:
+                    return "没有同名重复。"
+                deleted = 0
+                failed: list[str] = []
+                for _name, docs in groups:
+                    for doc in docs[1:]:
+                        doc_id = getattr(doc, "doc_id", "")
+                        try:
+                            await self.bridge.delete_document(doc_id=doc_id, kb_name=kb_name)
+                            deleted += 1
+                        except Exception as exc:
+                            failed.append(f"{doc_id}: {exc}")
+            text = f"已清理同名重复 {deleted} 篇。"
+            if failed:
+                text += "\n部分失败：\n" + "\n".join(failed)
+            return text
+        except Exception as exc:
+            return _failure("清理重复文档", exc)
 
     async def _allowed(self, event: AstrMessageEvent) -> bool:
         if not self.admin_only:

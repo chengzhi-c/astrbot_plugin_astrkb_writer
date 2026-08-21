@@ -8,15 +8,17 @@ import dataclasses
 import json
 from pathlib import Path
 
-import pytest
-
-pytest.importorskip("astrbot")
-
-from astrbot_plugin_astrkb_writer.core.astrkb_bridge import (  # noqa: E402
+from astrbot_plugin_astrkb_writer.core.astrkb_bridge import (
+    CHUNK_OVERLAP_DEFAULT,
+    CHUNK_SIZE_DEFAULT,
+    CHUNK_SIZE_MAX,
+    CHUNK_SIZE_MIN,
+    CONTENT_CHARS_DEFAULT,
+    CONTENT_CHARS_MAX,
+    CONTENT_CHARS_MIN,
     DEFAULT_KB_NAME,
     NativeKBConfig,
 )
-from astrbot_plugin_astrkb_writer.main import AstrKBWriterPlugin  # noqa: E402
 
 _ROOT = Path(__file__).resolve().parents[1]
 
@@ -40,6 +42,12 @@ def test_schema_defaults_match_code() -> None:
     assert schema["enable_delete"]["default"] is False
     assert schema["allow_create_kb"]["default"] is True
     assert schema["admin_only"]["default"] is True
+    assert schema["duplicate_policy"]["default"] == "create"
+    assert schema["duplicate_policy"]["options"] == ["create", "skip", "update"]
+    assert str(CHUNK_SIZE_MIN) in schema["chunk_size"]["description"]
+    assert str(CHUNK_SIZE_MAX) in schema["chunk_size"]["description"]
+    assert str(CONTENT_CHARS_MIN) in schema["max_content_chars"]["description"]
+    assert str(CONTENT_CHARS_MAX) in schema["max_content_chars"]["description"]
 
 
 def test_schema_keys_cover_all_plugin_config_keys() -> None:
@@ -56,7 +64,10 @@ def test_config_from_dict_defaults() -> None:
     assert cfg.allow_create_kb is True
     assert cfg.max_content_chars == 20000
     assert cfg.chunk_size == 512
-    assert cfg.chunk_overlap == 50
+    assert cfg.chunk_overlap == CHUNK_OVERLAP_DEFAULT
+    assert cfg.duplicate_policy == "create"
+    assert cfg.max_content_chars == CONTENT_CHARS_DEFAULT
+    assert cfg.chunk_size == CHUNK_SIZE_DEFAULT
 
 
 def test_config_from_dict_clamps_and_coerces() -> None:
@@ -74,3 +85,8 @@ def test_config_from_dict_clamps_and_coerces() -> None:
     assert cfg.max_content_chars == 20000
     assert cfg.allow_create_kb is False
     assert cfg.default_kb_name == DEFAULT_KB_NAME  # 空白名回退默认
+    cfg = NativeKBConfig.from_dict({"duplicate_policy": "UPDATE", "allow_create_kb": "false"})
+    assert cfg.duplicate_policy == "update"
+    assert cfg.allow_create_kb is False
+    cfg = NativeKBConfig.from_dict({"duplicate_policy": "nope"})
+    assert cfg.duplicate_policy == "create"
