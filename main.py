@@ -256,7 +256,8 @@ class AstrKBWriterPlugin(Star):
             kbs = await self.bridge.list_kbs()
             manager_status = f"可用，当前知识库 {len(kbs)} 个"
         except Exception as exc:
-            manager_status = f"不可用：{exc}"
+            logger.warning(f"[{PLUGIN_NAME}] status list_kbs failed: {exc}", exc_info=True)
+            manager_status = "不可用"
         text = (
             "AstrBot 原生知识库写入插件状态\n"
             f"- 原生知识库管理器：{manager_status}\n"
@@ -338,7 +339,7 @@ class AstrKBWriterPlugin(Star):
         except Exception as exc:
             return _failure("列出知识库", exc)
 
-    async def astrkb_list_documents(self, event: AstrMessageEvent, kb_name: str = "", limit: int = 20) -> str:
+    async def astrkb_list_documents(self, event: AstrMessageEvent, kb_name: str = "", limit: int = LIST_LIMIT_DEFAULT) -> str:
         """列出指定 AstrBot 原生知识库里的文档，用于更新/删除前确认 doc_id。"""
         if not await self._allowed(event):
             return _PERMISSION_DENIED
@@ -471,7 +472,14 @@ class AstrKBWriterPlugin(Star):
                             await self.bridge.delete_document(doc_id=doc_id, kb_name=kb_name)
                             deleted += 1
                         except Exception as exc:
-                            failed.append(f"{doc_id}: {exc}")
+                            if isinstance(exc, ValueError):
+                                failed.append(f"{doc_id}: {exc}")
+                            else:
+                                logger.warning(
+                                    f"[{PLUGIN_NAME}] dups-clean delete {doc_id} failed: {exc}",
+                                    exc_info=True,
+                                )
+                                failed.append(f"{doc_id}: 内部错误")
             text = f"已清理同名重复 {deleted} 篇。"
             if failed:
                 text += "\n部分失败：\n" + "\n".join(failed)

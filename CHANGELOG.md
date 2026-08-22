@@ -14,6 +14,7 @@
 - 新增指令 `/astrkb dups`、`/astrkb dups-clean`（后者需要 `enable_delete`）。
 - 写入已存在的知识库时使用该库的 `chunk_size` / `chunk_overlap`。
 - 标题超过 120 字时回复中提示已截断。
+- 配置项 `description` 改为短标题，详细说明放到 `hint`，避免控制台截断。
 
 ### 测试
 

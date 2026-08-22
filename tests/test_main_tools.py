@@ -282,6 +282,8 @@ def test_status_reports_policy_and_unavailable_manager() -> None:
     texts = asyncio.run(_collect(plugin.astrkb_status(event)))
     assert "同名写入：create" in texts[0]
     assert "不可用" in texts[0]
+    assert "无法获取" not in texts[0]
+    assert "Traceback" not in texts[0]
 
 
 def test_docs_missing_kb_uses_failure_message() -> None:
