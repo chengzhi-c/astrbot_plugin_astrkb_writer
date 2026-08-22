@@ -1,8 +1,14 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 import sys
+import tempfile
 from pathlib import Path
+
+# 必须在任何 astrbot import 之前：否则 AstrBot 会把 cmd_config.json 写进插件目录。
+_TEST_ROOT = Path(tempfile.mkdtemp(prefix="astrkb-test-root-"))
+os.environ["ASTRBOT_ROOT"] = str(_TEST_ROOT)
 
 PKG_NAME = "astrbot_plugin_astrkb_writer"
 
