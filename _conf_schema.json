@@ -1,53 +1,64 @@
 {
   "default_kb_name": {
-    "description": "默认写入的 AstrBot 原生知识库名称；不存在时可自动创建",
+    "description": "默认知识库",
+    "hint": "默认写入的 AstrBot 原生知识库名称；不存在时可自动创建。",
     "type": "string",
     "default": "Bot自由知识库"
   },
   "default_embedding_provider_id": {
-    "description": "自动创建知识库时使用的 Embedding Provider ID；留空则尝试自动选择第一个可用 embedding provider",
+    "description": "Embedding 提供商",
+    "hint": "自动创建知识库时使用。留空则尝试自动选择第一个可用 embedding provider。",
     "type": "string",
     "default": ""
   },
   "enable_write": {
-    "description": "是否允许 Bot 写入/更新文档",
+    "description": "允许写入/更新",
+    "hint": "关闭后 Bot 不能写入或更新文档。",
     "type": "bool",
     "default": true
   },
   "enable_delete": {
-    "description": "是否允许 Bot 删除知识库文档",
+    "description": "允许删除",
+    "hint": "关闭后禁用删除工具和 /astrkb dups-clean。更新文档时替换旧篇不受此开关影响。",
     "type": "bool",
     "default": false
   },
   "allow_create_kb": {
-    "description": "目标知识库不存在时是否允许自动创建",
+    "description": "允许自动创建知识库",
+    "hint": "目标知识库不存在时是否自动创建。",
     "type": "bool",
     "default": true
   },
   "admin_only": {
-    "description": "是否仅允许管理员使用写入工具",
+    "description": "仅管理员可用",
+    "hint": "开启后只有管理员能使用写入工具和相关指令。",
     "type": "bool",
     "default": true
   },
   "max_content_chars": {
-    "description": "单篇文档最大字符数（100–200000，超出按边界收回）",
+    "description": "单篇最大字符数",
+    "hint": "范围 100–200000，超出按边界收回。默认 20000。",
     "type": "int",
     "default": 20000
   },
   "chunk_size": {
-    "description": "上传到原生知识库时的分块大小（100–8000，超出按边界收回）",
+    "description": "分块大小",
+    "hint": "新建知识库时的分块大小，范围 100–8000。写入已存在的库时优先用该库自己的设置。",
     "type": "int",
     "default": 512
   },
   "chunk_overlap": {
-    "description": "上传到原生知识库时的分块重叠大小（0–2000，且必须小于 chunk_size）",
+    "description": "分块重叠",
+    "hint": "新建知识库时的分块重叠，范围 0–2000，且必须小于分块大小。写入已存在的库时优先用该库自己的设置。",
     "type": "int",
     "default": 50
   },
   "duplicate_policy": {
-    "description": "写入时遇到同名文档（标题生成的文件名相同）如何处理：create=总是新建（默认，兼容旧行为）；skip=跳过并返回已有文档；update=按更新语义覆盖最新一篇同名文档。清理历史双胞胎请用 /astrkb dups-clean。",
+    "description": "同名写入",
+    "hint": "标题生成的文件名相同时如何处理。create=总是新建（默认，兼容旧行为）；skip=跳过已有文档；update=覆盖最新一篇同名文档。清理历史双胞胎请用 /astrkb dups-clean。",
     "type": "string",
     "default": "create",
-    "options": ["create", "skip", "update"]
+    "options": ["create", "skip", "update"],
+    "labels": ["总是新建", "跳过", "覆盖最新一篇"]
   }
 }

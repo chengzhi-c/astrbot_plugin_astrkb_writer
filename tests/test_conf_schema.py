@@ -44,10 +44,17 @@ def test_schema_defaults_match_code() -> None:
     assert schema["admin_only"]["default"] is True
     assert schema["duplicate_policy"]["default"] == "create"
     assert schema["duplicate_policy"]["options"] == ["create", "skip", "update"]
-    assert str(CHUNK_SIZE_MIN) in schema["chunk_size"]["description"]
-    assert str(CHUNK_SIZE_MAX) in schema["chunk_size"]["description"]
-    assert str(CONTENT_CHARS_MIN) in schema["max_content_chars"]["description"]
-    assert str(CONTENT_CHARS_MAX) in schema["max_content_chars"]["description"]
+    assert schema["duplicate_policy"]["labels"] == ["总是新建", "跳过", "覆盖最新一篇"]
+    assert schema["duplicate_policy"]["description"] == "同名写入"
+    assert "create=" in schema["duplicate_policy"]["hint"]
+    assert str(CHUNK_SIZE_MIN) in schema["chunk_size"]["hint"]
+    assert str(CHUNK_SIZE_MAX) in schema["chunk_size"]["hint"]
+    assert str(CONTENT_CHARS_MIN) in schema["max_content_chars"]["hint"]
+    assert str(CONTENT_CHARS_MAX) in schema["max_content_chars"]["hint"]
+    for item in schema.values():
+        assert "description" in item and item["description"]
+        assert "hint" in item and item["hint"]
+        assert len(item["description"]) <= 20
 
 
 def test_schema_keys_cover_all_plugin_config_keys() -> None:
